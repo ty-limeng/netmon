@@ -4,7 +4,8 @@ from stats import get_stats
 from flow_tracker import get_top_flows
 import time
 from dns_tracker import get_top_domains
-
+from service_detector import get_top_services
+from device_tracker import get_devices
 console = Console()
 
 def draw():
@@ -32,6 +33,22 @@ def draw():
     dns_table = Table(title="Top Domains")
     dns_table.add_column("Domain")
     dns_table.add_column("Queries")
+    service_table = Table(title="Service Usage")
+    service_table.add_column("Service")
+    service_table.add_column("Bytes")
+    device_table = Table(title="LAN Devices")
+    device_table.add_column("IP Address")
+    device_table.add_column("MAC Address")
+
+    for ip, mac in get_devices().items():
+        device_table.add_row(ip, mac)
+
+    console.print(device_table)
+
+    for service, usage in get_top_services():
+        service_table.add_row(service, str(usage))
+
+    console.print(service_table)
 
     for domain, count in get_top_domains():
         dns_table.add_row(domain, str(count))
