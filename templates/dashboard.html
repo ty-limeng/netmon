@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>NetMon Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #0f172a;
+            color: white;
+            margin: 0;
+            padding: 20px;
+        }
+
+        h1 {
+            text-align: center;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .card {
+            background: #1e293b;
+            padding: 20px;
+            border-radius: 10px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            padding: 6px;
+            border-bottom: 1px solid #334155;
+            text-align: left;
+        }
+
+        canvas {
+            max-height: 250px;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Network Monitoring Dashboard</h1>
+
+<div class="grid">
+
+    <div class="card">
+        <h3>Summary</h3>
+        <p>Bandwidth: <span id="bandwidth">0</span> KB/s</p>
+        <p>Packets/sec: <span id="pps">0</span></p>
+    </div>
+	<div class="card">
+	    <h3>Top Upstream (Outbound)</h3>
+	    <table id="upstreamTable">
+	        <tr><th>Destination</th><th>Bytes</th></tr>
+	    </table>
+	</div>
+	<div class="card">
+	    <h3>Top Inbound (External → Server)</h3>
+	    <table id="inboundTable">
+	        <tr><th>Source</th><th>Bytes</th></tr>
+	    </table>
+	</div>
+    <div class="card">
+        <h3>Protocol Distribution</h3>
+        <canvas id="protocolChart"></canvas>
+    </div>
+
+    <div class="card">
+        <h3>Top IP Traffic</h3>
+        <table id="ipTable">
+            <tr><th>IP</th><th>Bytes</th></tr>
+        </table>
+    </div>
+
+    <div class="card">
+        <h3>Top Domains</h3>
+        <table id="dnsTable">
+            <tr><th>Domain</th><th>Queries</th></tr>
+        </table>
+    </div>
+
+</div>
+
+<script>
+let protocolChart = new Chart(
+    document.getElementById('protocolChart'),
+    {
+        type: 'doughnut',
+        data: {
+            labels: [],
+            datasets: [{
+                data: [],
+                backgroundColor: [
+                    "#3b82f6",
+                    "#10b981",
+                    "#f59e0b",
+                    "#ef4444",
+                    "#8b5cf6"
+                ]
+            }]
+        }
+    }
+);
+
+async function fetchData() {
+    const res = await fetch('/api/stats');
+    const data = await res.json();
+
+    document.getElementById("bandwidth").innerText =
+        (data.bandwidth / 1024).toFixed(2);
+
+    document.getElementById("pps").innerText =
+        data.pps.toFixed(2);
+	// Upstream table
+	let upstreamTable = document.getElementById("upstreamTable");
+	upstreamTable.innerHTML =
+	    "<tr><th>Destination</th><th>Bytes</th></tr>";
+
+	data.upstream.forEach(row => {
+	    upstreamTable.innerHTML +=
+	        `<tr><td>${row[0]}</td><td>${row[1]}</td></tr>`;
+	});
+
+	// Inbound table
+	let inboundTable = document.getElementById("inboundTable");
+	inboundTable.innerHTML =
+	    "<tr><th>Source</th><th>Bytes</th></tr>";
+
+	data.inbound.forEach(row => {
+	    inboundTable.innerHTML +=
+	        `<tr><td>${row[0]}</td><td>${row[1]}</td></tr>`;
+	});
+
+    // Update protocol chart
+    protocolChart.data.labels = Object.keys(data.protocols);
+    protocolChart.data.datasets[0].data =
+        Object.values(data.protocols);
+    protocolChart.update();
+
+    // Update IP table
+    let ipTable = document.getElementById("ipTable");
+    ipTable.innerHTML = "<tr><th>IP</th><th>Bytes</th></tr>";
+
+    data.top_ips.forEach(row => {
+        ipTable.innerHTML +=
+            `<tr><td>${row[0]}</td><td>${row[1]}</td></tr>`;
+    });
+
+    // Update DNS table
+    let dnsTable = document.getElementById("dnsTable");
+    dnsTable.innerHTML =
+        "<tr><th>Domain</th><th>Queries</th></tr>";
+
+    data.domains.forEach(row => {
+        dnsTable.innerHTML +=
+            `<tr><td>${row[0]}</td><td>${row[1]}</td></tr>`;
+    });
+}
+
+setInterval(fetchData, 1000);
+fetchData();
+</script>
+
+</body>
+</html>
