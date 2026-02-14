@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Network Monitor</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #0f172a;
+            color: white;
+            margin: 20px;
+        }
+
+        .row {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .card {
+            flex: 1;
+            background: #1e293b;
+            padding: 20px;
+            border-radius: 10px;
+        }
+
+        h2 { margin-top: 0; }
+
+        table { width: 100%; border-collapse: collapse; }
+        td { padding: 5px; border-bottom: 1px solid #334155; }
+
+        .center { text-align: center; }
+    </style>
+</head>
+<body>
+
+<h1>Network Monitor</h1>
+
+<!-- ROW 1: Traffic Summary -->
+<div class="row">
+    <div class="card">
+        <h2>Traffic Summary</h2>
+
+        <!-- Pie Charts Side by Side -->
+        <div class="center" style="display: flex; justify-content: center; align-items: flex-start; gap: 80px; flex-wrap: wrap;">
+
+            <!-- Protocol Pie -->
+            <div style="text-align: center; width: 180px;">
+                <canvas id="protocolChart" width="180" height="180"></canvas>
+                <div id="protocolNames" style="margin-top: 6px; font-size: 12px;"></div>
+            </div>
+
+            <!-- Service Pie -->
+            <div style="text-align: center; width: 180px;">
+                <canvas id="serviceChart" width="180" height="180"></canvas>
+                <div id="serviceNames" style="margin-top: 6px; font-size: 12px;"></div>
+            </div>
+        </div>
+
+        <!-- Bandwidth & PPS -->
+        <div class="center" style="margin-top: 12px; font-size: 14px; font-weight: bold;">
+            <span id="bandwidth"></span> | <span id="pps"></span>
+        </div>
+    </div>
+
+    <!-- Top Domains & IP Traffic -->
+    <div class="card">
+        <h2>Top Domains & IP Traffic</h2>
+
+        <div style="margin-bottom: 20px;">
+            <h3 style="margin: 5px 0;">Top Domains</h3>
+            <table id="domainsTable"></table>
+        </div>
+
+        <div>
+            <h3 style="margin: 5px 0;">Top IP Traffic (MB)</h3>
+            <table id="topIpsTable"></table>
+        </div>
+    </div>
+</div>
+
+<!-- ROW 2: Inbound/Outbound -->
+<div class="row">
+    <div class="card">
+        <h2>Top Inbound</h2>
+        <table id="inboundTable"></table>
+    </div>
+
+    <div class="card">
+        <h2>Top Outbound</h2>
+        <table id="outboundTable"></table>
+    </div>
+</div>
+
+<script>
+let protocolChart, serviceChart;
+
+async function loadData() {
+    const res = await fetch("/api/stats");
+    const data = await res.json();
+
+    // -------------------------
+    // Bandwidth & Packets
+    // -------------------------
+    document.getElementById("bandwidth").innerText = 
+        "Bandwidth: " + (data.bandwidth / 1024).toFixed(2) + " KB/s";
+    document.getElementById("pps").innerText =
+        "Packets: " + data.pps.toFixed(2);
+
+    // -------------------------
+    // Protocol Pie Chart
+    // -------------------------
+    const protocolLabels = Object.keys(data.protocols);
+    const protocolValues = Object.values(data.protocols);
+
+    const protocolColors = protocolLabels.map(p => {
+        switch(p){
+            case "TCP": return "#3b82f6";
+            case "UDP": return "#22c55e";
+            case "ICMP": return "#f59e0b";
+            case "QUIC": return "#8b5cf6";
+            default: return "#ef4444";
+        }
+    });
+
+    if (protocolChart) protocolChart.destroy();
+    protocolChart = new Chart(document.getElementById("protocolChart"), {
+        type: 'pie',
+        data: {
+            labels: protocolLabels,
+            datasets: [{
+                data: protocolValues,
+                backgroundColor: protocolColors
+            }]
+        },
+        options: {
+            responsive: false,
+            plugins: { legend: { display: false } }
+        }
+    });
+
+    // Protocol names below chart
+    document.getElementById("protocolNames").innerText = protocolLabels.join(" | ");
+
+    // -------------------------
+    // Service Pie Chart (Percentage)
+    // -------------------------
+    const serviceLabels = data.services.map(s => s[0]);
+    const serviceValues = data.services.map(s => s[1]);
+
+    const totalService = serviceValues.reduce((a,b) => a+b, 0);
+    const servicePercent = serviceValues.map(v => ((v/totalService)*100).toFixed(1));
+
+    const serviceColors = [
+        "#f97316", // orange
+        "#10b981", // teal
+        "#facc15", // yellow
+        "#8b5cf6", // purple
+        "#ec4899", // pink
+        "#06b6d4", // cyan
+        "#ef4444"  // red
+    ];
+
+    if (serviceChart) serviceChart.destroy();
+    serviceChart = new Chart(document.getElementById("serviceChart"), {
+        type: 'pie',
+        data: {
+            labels: serviceLabels,
+            datasets: [{
+                data: servicePercent,
+                backgroundColor: serviceLabels.map((_,i) => serviceColors[i % serviceColors.length])
+            }]
+        },
+        options: {
+            responsive: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return context.label + ': ' + context.raw + '%';
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    // Service names below chart
+    document.getElementById("serviceNames").innerText = serviceLabels.join(" | ");
+
+    // -------------------------
+    // Top Domains
+    // -------------------------
+    const domainsTable = document.getElementById("domainsTable");
+    domainsTable.innerHTML = "";
+    data.domains.forEach(d => {
+        domainsTable.innerHTML += `<tr><td>${d[0]}</td><td>${d[1]} Queries</td></tr>`;
+    });
+
+    // Top IP Traffic
+    const topIpsTable = document.getElementById("topIpsTable");
+    topIpsTable.innerHTML = "";
+    data.top_ips.forEach(ip => {
+        const mb = (ip[1] / (1024*1024)).toFixed(2);
+        topIpsTable.innerHTML += `<tr><td>${ip[0]}</td><td>${mb} MB</td></tr>`;
+    });
+
+    // Top Inbound
+    const inboundTable = document.getElementById("inboundTable");
+    inboundTable.innerHTML = "";
+    data.inbound.forEach(f => {
+        const kb = (f[1]/1024).toFixed(2);
+        inboundTable.innerHTML += `<tr><td>${f[0]}</td><td>${kb} KB</td></tr>`;
+    });
+
+    // Top Outbound
+    const outboundTable = document.getElementById("outboundTable");
+    outboundTable.innerHTML = "";
+    data.upstream.forEach(f => {
+        const kb = (f[1]/1024).toFixed(2);
+        outboundTable.innerHTML += `<tr><td>${f[0]}</td><td>${kb} KB</td></tr>`;
+    });
+}
+
+// Refresh every 5 seconds
+setInterval(loadData, 5000);
+loadData();
+</script>
+
+</body>
+</html>
